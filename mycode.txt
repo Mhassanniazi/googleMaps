@@ -1,0 +1,115 @@
+import json
+import scrapy
+from scrapy.crawler import CrawlerProcess
+from bs4 import BeautifulSoup
+import time
+import mysql.connector as mysql
+import pandas as pd
+from datetime import date, datetime
+
+class googleMapsSpider(scrapy.Spider):
+    name = "googleMapsSpider"
+    url = "https://www.google.com/maps/place/Shezi+Restaurant/@24.8723418,67.0174179,17z/data=!3m1!4b1!4m6!3m5!1s0x3eb33f7142d4a32f:0x3c8399de7b9346be!8m2!3d24.8723418!4d67.0174179!16s%2Fg%2F11lkjnwv04?authuser=0&hl=en"
+    # url = "https://www.google.com/maps/place/Zeytin/data=!4m6!3m5!1s0x3eb33f8dc4a1f703:0x977066a62dfc173f!8m2!3d24.8808233!4d67.0623402!16s%2Fg%2F11hythlkdg?authuser=0&hl=en"
+    # url="https://www.google.com/maps/place/Marhaba+Restaurant/@24.8712706,67.0465406,17.42z/data=!4m5!3m4!1s0x3eb33e8a3d1a48b9:0x47a692fec2eca525!8m2!3d24.870706!4d67.0481427?authuser=0&hl=en"
+    # url = "https://www.google.com/maps/place/Marhaba+Restaurant/@24.8707075,67.0459518,17z/data=!3m1!4b1!4m5!3m4!1s0x3eb33e8a3d1a48b9:0x47a692fec2eca525!8m2!3d24.870706!4d67.0481427?authuser=0&hl=en"
+    # url = "https://www.google.com/maps/place/C%C3%B4te+R%C3%B4tie/@24.8332512,67.0362759,17z/data=!4m6!3m5!1s0x3eb33d890c6fffff:0x5f0955423d953a43!8m2!3d24.8332506!4d67.0362716!16s%2Fg%2F11c5g_zfp3?authuser=0&hl=en"
+    # url = "https://www.google.com/maps/place/Marhaba+Restaurant/@24.8707026,67.0481405,17z/data=!4m6!3m5!1s0x3eb33e8a3d1a48b9:0x47a692fec2eca525!8m2!3d24.870706!4d67.0481427!16s%2Fg%2F11b6mlphph?authuser=0&hl=en"
+    
+    # config file 
+    # with open("config.json","r") as config:
+    #     configuration = json.load(config)
+
+    custom_settings = {
+        "DOWNLOAD_DELAY" : 0.2,
+        ######## "ROTATING_PROXY_LIST" : ["108.59.14.208:13040","108.59.14.203:13040"],
+        # "ROTATING_PROXY_LIST" : configuration['proxy_list'],
+        # "DOWNLOADER_MIDDLEWARES" : {
+        #     "rotating_proxies.middlewares.RotatingProxyMiddleware" : 610,
+        #     "rotating_proxies.middlewares.BanDetectionMiddleware" : 620
+        #     }
+    }
+    def start_requests(self):
+        yield scrapy.Request(url=self.url,callback=self.parse_page)
+    
+    def parse_page(self,response):
+        soup = BeautifulSoup(response.body,'html.parser')
+        data = soup.find_all('script')[6].text.strip()
+        # with open('reviews_details.txt', 'w', encoding="utf-8") as f:
+            # f.write(data)
+        data = data.split("window.APP_OPTIONS=")
+        data = data[1]
+        data = data.split(";window.APP_INITIALIZATION_STATE=")
+        data = data[1]
+        data = data.split(";window.APP_FLAGS=")
+        data = data[0]
+        res = json.loads(data)
+        # print("Hey the response is: ",res)
+        new_data = str(res[3][6])
+        new_data = new_data[5:]
+        
+        more_data = str(res[3][5])
+        more_data = more_data[5:]
+        result = json.loads(more_data)
+        url_part = result[13][0]
+        print("hey the resultant data is: ",result)
+        # with open('reviews_details.txt', 'w', encoding="utf-8") as f:
+            # f.write(new_data)
+        res = json.loads(new_data)
+        code1 = res[6][72][0][0][29][0]
+        code2 = res[6][72][0][0][29][1]
+
+        limit1 = 0
+        limit2 = 150
+
+        reviews_link = f"https://www.google.com/maps/preview/review/listentitiesreviews?authuser=0&hl=en&authuser=0&pb=!1m2!1y{code1}!2y{code2}!2m2!1i{limit1}!2i{limit2}!3e2!4m5!3b1!4b1!5b1!6b1!7b1!5m2!1s{url_part}!7e81"
+        print("LINK IS:",reviews_link)
+        yield scrapy.Request(url=reviews_link,callback=self.parse_reviews)
+    
+    def parse_reviews(self,response):
+        data1 = response.text
+        data1 = data1.split(")]}'\n")
+        data = data1[1]
+        res = json.loads(data)
+        # all reviews list
+        reviews_data = res[2]
+
+        # iterating over all reviews
+        for i in reviews_data:
+            reviewer_link = i[0][0]
+            reviewer_name = i[0][1]
+            reviewer_role = i[12][1][12][0]
+            
+            yield {
+                "reviewer_link" : reviewer_link,
+                "reviewer_name" : reviewer_name,
+                "reviewer_role" : reviewer_role
+            }
+
+
+
+
+
+
+
+
+        # while True:
+        #     link_created = f"https://www.google.com/maps/preview/review/listentitiesreviews?authuser=0&hl=en&pb=!1m2!1y{code1}!2y{code2}!2m2!1i{limit1}!2i{limit2}!3e2!4m5!3b1!4b1!5b1!6b1!7b1!5m2!1s!7e81"
+        #     print("The created link is: ",link_created)
+        #     r1 = requests.get(link_created, proxies={
+        #         'http': proxy, 'https': proxy}, timeout=25)
+        #     print(f"link is {link_created}")
+        #     # r1 = requests.get(link_created)
+        #     data1 = r1.text
+        #     data1 = (data1.split(")]}'\n"))
+        #     data1 = data1[1]
+        #     ini_list = data1
+        #     res = json.loads(ini_list)
+        #     # all reviews list
+        #     new_data = res[2]
+
+initial_time = time.time()
+process = CrawlerProcess()
+process.crawl(googleMapsSpider)
+process.start()
+print("Total time taken: ",time.time()-initial_time)
